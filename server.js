@@ -67,5 +67,36 @@ app.get("/search_food", async (req, res) => {
   }
 });
 
+app.get("/get_food_details", async (req, res) => {
+  try {
+    const foodId = req.query.food_id; // Récupère l'ID de l'aliment depuis la requête
+    if (!foodId) {
+      return res.status(400).json({ error: "food_id is required" });
+    }
+
+    const token = await getAccessToken(); // Récupérer le token d'accès FatSecret
+
+    let formData = new URLSearchParams();
+    formData.append("method", "food.get.v4");
+    formData.append("food_id", foodId);
+    formData.append("format", "json");
+
+    const response = await fetch("https://platform.fatsecret.com/rest/server.api", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: formData
+    });
+
+    const data = await response.json();
+    res.json(data); // Retourne les détails de l'aliment
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 const PORT = process.env.PORT || 3000; // Utilisation du port dynamique de Render
 app.listen(PORT, () => console.log(`Serveur FatSecret Proxy en cours sur port ${PORT}`));
