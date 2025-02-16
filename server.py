@@ -79,18 +79,19 @@ def generate_training_program(data):
     }
 
     user_prompt = PROMPT_TEMPLATE.format(
-        sport=data["sport"],
-        level=data["level"],
-        frequency=data["frequency"],
-        goal=data["goal"],
-        duration=data.get("duration", "12"),  # L'IA décide si non fourni
-        cycle_duration=data.get("cycle_duration", "4"),
-        week_number=1,
-        session_number=1,
-        charge="75% 1RM",  # **Uniquement pour la première semaine**
-        repetitions=8,
-        rest_time=90
-    )
+    sport=data["sport"],
+    level=data["level"],
+    frequency=data["frequency"],
+    goal=data["goal"],
+    duration=data.get("duration", "12"),  # L'IA décide si non fourni
+    cycle_duration=data.get("cycle_duration", "4"),
+    week_number=1,
+    session_number=1,
+    charge="75% 1RM",  
+    repetitions=8,
+    rest_time=90,
+    genre=data.get("genre", "Non spécifié")  # 🔥 Ajout de genre avec une valeur par défaut
+)
 
     payload = {
         "model": "gpt-4o-mini",
