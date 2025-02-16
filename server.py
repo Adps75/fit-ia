@@ -9,11 +9,15 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
 # Configuration Bubble
-BUBBLE_API_URL = "https://fitia-47460.bubbleapps.io/version-test/api/1.1/obj"
+BUBBLE_API_URL = "https://fitia-47460.bubbleapps.io/version-test/api/1.1/obj/programme"
 
-# Prompt pour la génération du programme
+# Vérifier si les clés API sont bien définies
+if not OPENAI_API_KEY:
+    raise ValueError("❌ Clé API OpenAI manquante ! Ajoutez-la dans les variables d'environnement.")
+
+# 📌 Prompt pour la génération du programme
 PROMPT_TEMPLATE = """Tu es un coach expert en préparation physique et en planification de programmes sportifs. 
-Ton objectif est de générer des programmes d'entraînement structurés sur plusieurs cycles et semaines, sous un format JSON bien défini.
+Génère un programme d'entraînement structuré en cycles et semaines sous un format JSON bien défini.
 
 Génère un programme d'entraînement détaillé en respectant cette structure :
 {{
@@ -76,8 +80,8 @@ def generate_training_program(data):
         level=data["level"],
         frequency=data["frequency"],
         goal=data["goal"],
-        duration=data["duration"],
-        cycle_duration=data["cycle_duration"],
+        duration=data.get("duration", "12"),  # Laisse l'IA gérer la durée si non spécifiée
+        cycle_duration=data.get("cycle_duration", "4"),
         week_number=1,
         session_number=1,
         charge="75% 1RM",
@@ -101,12 +105,22 @@ def generate_training_program(data):
     else:
         return None
 
+@app.route("/generate-program", methods=["POST"])
+def generate_program():
+    """ Endpoint pour générer un programme et l'envoyer à Bubble """
+    data = request.json
+    program_json = generate_training_program(data)
+
+    if program_json:
+        return jsonify({"programme": program_json}), 201
+    else:
+        return jsonify({"error": "Échec de la génération du programme"}), 500
+
 @app.route("/analyse-progress", methods=["POST"])
 def analyse_progress():
     """ Analyse les performances et ajuste les charges pour la semaine suivante """
     data = request.json
 
-    # Préparation des inputs pour l'IA
     prompt = f"""
     Tu es un coach de suivi personnalisé.
     Voici les performances de l'utilisateur pour la semaine {data["current_week"]} :
