@@ -8,9 +8,8 @@ app = Flask(__name__)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
-# Configuration Bubble
-BUBBLE_API_URL = "https://your-app.bubbleapps.io/api/1.1/obj/"
-BUBBLE_API_KEY = os.getenv("BUBBLE_API_KEY")
+# Configuration Bubble (Assure-toi que l'API Data est activée sur Bubble)
+BUBBLE_API_URL = "https://fitia-47460.bubbleapps.io/version-test/api/1.1/obj/programme"
 
 # Prompt pour la génération du programme
 PROMPT_TEMPLATE = """Tu es un coach expert en préparation physique et en planification de programmes sportifs. 
@@ -57,6 +56,7 @@ Paramètres :
 - Niveau : {level}
 - Fréquence d'entraînement : {frequency} fois par semaine
 - Objectif : {goal}
+- Genre : {genre}
 
 ⚠️ **IMPORTANT** : 
 - **Ne pas inclure de texte explicatif avant ou après le JSON.**
@@ -71,7 +71,6 @@ def generate_training_program(data):
         "Content-Type": "application/json"
     }
 
-    # Prépare le message pour l'IA
     user_prompt = PROMPT_TEMPLATE.format(
         sport=data["sport"],
         level=data["level"],
@@ -105,13 +104,12 @@ def generate_training_program(data):
 def save_to_bubble(program_data):
     """ Envoie les données générées vers Bubble API """
     headers = {
-        "Authorization": f"Bearer {BUBBLE_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    response = requests.post(BUBBLE_API_URL + "programme", json=program_data, headers=headers)
+    response = requests.post(BUBBLE_API_URL, json=program_data, headers=headers)
     
-    return response.status_code == 201
+    return response.status_code, response.text  # On retourne aussi la réponse de Bubble pour debug
 
 @app.route("/generate-program", methods=["POST"])
 def generate_program():
@@ -121,11 +119,12 @@ def generate_program():
 
     if program_json:
         program_data = {"programme_data": program_json, "user_id": data["user_id"]}
-        
-        if save_to_bubble(program_data):
+        status_code, response_text = save_to_bubble(program_data)
+
+        if status_code == 201:
             return jsonify({"message": "Programme enregistré avec succès !"}), 201
         else:
-            return jsonify({"error": "Erreur lors de l'enregistrement sur Bubble"}), 500
+            return jsonify({"error": "Erreur lors de l'enregistrement sur Bubble", "details": response_text}), 500
     else:
         return jsonify({"error": "Échec de la génération du programme"}), 500
 
