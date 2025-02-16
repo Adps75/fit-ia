@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 import os
+import json
 
 app = Flask(__name__)
 
@@ -74,6 +75,10 @@ def generate_training_program(data):
         "Content-Type": "application/json"
     }
 
+    # Définir dynamiquement le nombre de séries en fonction du niveau
+    level = data["level"].lower()
+    series_count = 3 if level == "débutant" else 4 if level == "intermédiaire" else 5  # Plus d'expérience = plus de séries
+
     user_prompt = PROMPT_TEMPLATE.format(
         sport=data["sport"],
         level=data["level"],
@@ -81,6 +86,7 @@ def generate_training_program(data):
         goal=data["goal"],
         duration=data.get("duration", "12"),  # L'IA décide si non fourni
         cycle_duration=data.get("cycle_duration", "4"),
+        series_count="series_count",
         charge="75% 1RM",
         repetitions=8,
         rest_time=90,
@@ -111,10 +117,10 @@ def generate_program():
 
     if program_json:
         try:
-            program_data = eval(program_json)  # 🔥 Convertir le JSON string en dictionnaire Python
+            program_data = json.loads(program_json)  # 🔥 Convertir JSON string en dict sécurisé
             return jsonify(program_data), 201  # Renvoie le programme complet à Bubble
         except Exception as e:
-            return jsonify({"error": f"Erreur de traitement : {str(e)}"}), 500
+            return jsonify({"error": f"Erreur de traitement JSON : {str(e)}"}), 500
     else:
         return jsonify({"error": "Échec de la génération du programme"}), 500
 
@@ -128,7 +134,7 @@ def analyse_progress():
     Voici les performances de l'utilisateur pour la semaine {data["current_week"]} :
     {data["performance_data"]}
     
-    Génère uniquement les charges et répétitions des séances de la semaine suivante.
+    Génère uniquement les charges, répétitions et séries des séances de la semaine suivante.
     """
 
     payload = {
