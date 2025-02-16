@@ -4,22 +4,22 @@ import os
 
 app = Flask(__name__)
 
-# Configuration OpenAI
+# 🔹 Configuration OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
-# Vérification de la clé API
+# 🔹 Vérification de la clé API OpenAI
 if not OPENAI_API_KEY:
     raise ValueError("❌ Clé API OpenAI manquante ! Ajoutez-la dans les variables d'environnement.")
 
-# 📌 Prompt pour la génération du programme
+# 📌 Prompt pour la génération du programme d'entraînement
 PROMPT_TEMPLATE = """Tu es un coach expert en préparation physique et en planification de programmes sportifs. 
 Génère un programme d'entraînement structuré en cycles et semaines sous un format JSON bien défini.
 
 Génère un programme d'entraînement détaillé en respectant cette structure :
 {{
   "programme": {{
-    "nom": "{programme_name}",
+    "nom": "Programme personnalisé",
     "durée": "{duration} semaines",
     "list_cycles": [
       {{
@@ -27,11 +27,11 @@ Génère un programme d'entraînement détaillé en respectant cette structure :
         "durée": "{cycle_duration} semaines",
         "list_semaines": [
           {{
-            "numéro": {week_number},
+            "numéro": 1,
             "list_séances": [
               {{
                 "nom": "Nom de la séance",
-                "numéro": {session_number},
+                "numéro": 1,
                 "list_exercices": [
                   {{
                     "nom": "Nom de l'exercice",
@@ -68,26 +68,23 @@ Paramètres :
 """
 
 def generate_training_program(data):
-    """ Génère un programme d'entraînement via OpenAI API """
+    """ 🔥 Génère un programme d'entraînement via OpenAI API """
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
     }
 
     user_prompt = PROMPT_TEMPLATE.format(
-        programme_name="Programme personnalisé",
         sport=data["sport"],
         level=data["level"],
         frequency=data["frequency"],
         goal=data["goal"],
-        duration=data.get("duration", "12"),  # L'IA gère la durée si non spécifiée
+        duration=data.get("duration", "12"),  # L'IA décide si non fourni
         cycle_duration=data.get("cycle_duration", "4"),
-        week_number=1,
-        session_number=1,
-        series_count=4,  # Valeur par défaut, sera modifiée par l'IA
         charge="75% 1RM",
         repetitions=8,
-        rest_time=90
+        rest_time=90,
+        genre=data.get("genre", "Non spécifié")  
     )
 
     payload = {
@@ -108,18 +105,22 @@ def generate_training_program(data):
 
 @app.route("/generate-program", methods=["POST"])
 def generate_program():
-    """ Endpoint pour générer un programme et l'envoyer à Bubble """
+    """ 📌 Endpoint pour générer un programme et renvoyer les données à Bubble """
     data = request.json
     program_json = generate_training_program(data)
 
     if program_json:
-        return jsonify({"programme": program_json}), 201
+        try:
+            program_data = eval(program_json)  # 🔥 Convertir le JSON string en dictionnaire Python
+            return jsonify(program_data), 201  # Renvoie le programme complet à Bubble
+        except Exception as e:
+            return jsonify({"error": f"Erreur de traitement : {str(e)}"}), 500
     else:
         return jsonify({"error": "Échec de la génération du programme"}), 500
 
 @app.route("/analyse-progress", methods=["POST"])
 def analyse_progress():
-    """ Analyse les performances et ajuste les charges pour la semaine suivante """
+    """ 🔥 Analyse les performances et ajuste les charges pour la semaine suivante """
     data = request.json
 
     prompt = f"""
@@ -127,13 +128,13 @@ def analyse_progress():
     Voici les performances de l'utilisateur pour la semaine {data["current_week"]} :
     {data["performance_data"]}
     
-    Génère les charges, répétitions et séries pour la semaine suivante en ajustant selon la progression.
+    Génère uniquement les charges et répétitions des séances de la semaine suivante.
     """
 
     payload = {
         "model": "gpt-4o-mini",
         "messages": [
-            {"role": "system", "content": "Tu es un coach expert en analyse sportive."},
+            {"role": "system", "content": "Tu es un coach expert en suivi d'entraînement."},
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7
