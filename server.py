@@ -66,10 +66,27 @@ def generate_training_program(data):
 
     response = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
 
-    if response.status_code == 200:
-        return json.loads(response.json()["choices"][0]["message"]["content"])
-    else:
+    # Vérification de la réponse d'OpenAI
+    if response.status_code != 200:
         print(f"❌ Erreur OpenAI : {response.text}")
+        return None
+
+    try:
+        response_json = response.json()
+        if "choices" not in response_json or not response_json["choices"]:
+            print("❌ OpenAI a renvoyé une réponse vide.")
+            return None
+        
+        message_content = response_json["choices"][0]["message"]["content"]
+        if not message_content:
+            print("❌ OpenAI a renvoyé un message vide.")
+            return None
+
+        return json.loads(message_content)  # Convertir en dict
+
+    except json.JSONDecodeError as e:
+        print(f"❌ Erreur de décodage JSON : {str(e)}")
+        print(f"🔍 Réponse brute OpenAI : {response.text}")
         return None
 
 # 📌 Fonction principale pour traiter et envoyer le programme à Bubble
