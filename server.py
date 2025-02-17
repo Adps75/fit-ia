@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import os
 import json
-import re  # Ajout pour nettoyer le JSON
+import re
 
 app = Flask(__name__)
 
@@ -19,30 +19,30 @@ if not OPENAI_API_KEY:
 
 # 📌 Fonction pour envoyer les données à Bubble Backend Workflows
 def send_to_bubble(endpoint, payload):
-    """ Envoie les données à Bubble et log les erreurs """
+    """ Envoie les données à Bubble et gère les erreurs """
     url = f"{BUBBLE_BASE_URL}/{endpoint}"
     headers = {"Content-Type": "application/json"}
 
-    print(f"\n➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")  # Log des données envoyées
+    print(f"\n➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")
 
     response = requests.post(url, json=payload, headers=headers)
 
-    print(f"🔄 Réponse API Bubble : Code {response.status_code} | Contenu : {response.text}")  # Log de la réponse
+    print(f"🔄 Réponse API Bubble : Code {response.status_code} | Contenu : {response.text}")
 
     if response.status_code == 200:
         return response.json()
     else:
         return None
 
-# 📌 Fonction pour nettoyer la réponse JSON d'OpenAI
+# 📌 Fonction pour nettoyer et extraire le JSON d'OpenAI
 def clean_json_response(response_text):
-    """ Nettoie le JSON en supprimant les blocs Markdown """
+    """ Nettoie le JSON renvoyé par OpenAI pour supprimer les balises Markdown """
     cleaned_text = re.sub(r"```json\n(.*?)\n```", r"\1", response_text, flags=re.DOTALL)
-    return cleaned_text.strip()  # Supprime les espaces superflus
+    return cleaned_text.strip()
 
 # 📌 Génération du programme d'entraînement avec OpenAI
 def generate_training_program(data):
-    """ Génère un programme via OpenAI """
+    """ Génère un programme structuré via OpenAI """
     prompt = f"""
     Tu es un coach expert en préparation physique et en planification de programmes sportifs.
     Génère un programme d'entraînement structuré en cycles et semaines sous un format JSON bien défini.
@@ -54,7 +54,7 @@ def generate_training_program(data):
     - Objectif : {data["goal"]}
     - Genre : {data["genre"]}
 
-    Retourne un JSON **sans texte additionnel**, uniquement la structure suivante :
+    Retourne un JSON **sans texte additionnel**, avec cette structure :
     ```json
     {{
       "programme": {{
@@ -79,7 +79,6 @@ def generate_training_program(data):
 
     response = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
 
-    # Vérification de la réponse d'OpenAI
     if response.status_code != 200:
         print(f"❌ Erreur OpenAI : {response.text}")
         return None
@@ -127,6 +126,8 @@ def process_training_program(data):
     if not programme_id:
         return {"error": "ID programme manquant"}
 
+    print(f"✅ Programme enregistré avec ID : {programme_id}")
+
     # 2️⃣ Enregistrement des Cycles
     for cycle in programme_data["programme"]["list_cycles"]:
         cycle_response = send_to_bubble("create_cycle", {
@@ -138,6 +139,7 @@ def process_training_program(data):
             continue
 
         cycle_id = cycle_response.get("id")
+        print(f"✅ Cycle enregistré : {cycle['nom']} (ID : {cycle_id})")
 
         # 3️⃣ Enregistrement des Semaines
         for semaine in cycle["list_semaines"]:
