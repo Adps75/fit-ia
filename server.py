@@ -27,7 +27,7 @@ def send_to_bubble(endpoint, payload):
     if response.status_code == 200:
         return response.json()
     else:
-        print(f"❌ Erreur lors de l'appel API Bubble {endpoint}: {response.text}")
+        print(f"❌ Erreur API Bubble {endpoint} | Code: {response.status_code} | Réponse: {response.text}")
         return None
 
 # 📌 Fonction pour nettoyer la réponse JSON d'OpenAI
