@@ -23,15 +23,21 @@ def send_to_bubble(endpoint, payload):
     url = f"{BUBBLE_BASE_URL}/{endpoint}"
     headers = {"Content-Type": "application/json"}
 
-    print(f"\n➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")
+    print(f"\n➡️ Envoi à Bubble : {url}")
+    print(f"📦 Payload : {json.dumps(payload, indent=2)}")
 
     response = requests.post(url, json=payload, headers=headers)
 
     print(f"🔄 Réponse API Bubble : Code {response.status_code} | Contenu : {response.text}")
 
     if response.status_code == 200:
-        return response.json()
+        try:
+            return response.json()
+        except json.JSONDecodeError:
+            print("❌ Erreur de décodage JSON de Bubble")
+            return None
     else:
+        print(f"❌ ERREUR Bubble : {response.text}")
         return None
 
 # 📌 Fonction pour nettoyer et extraire le JSON d'OpenAI
@@ -96,7 +102,7 @@ def generate_training_program(data):
 
         # 🔥 Nettoyage du JSON
         cleaned_json = clean_json_response(message_content)
-        
+
         # 🔥 Conversion en dictionnaire Python
         return json.loads(cleaned_json)
 
@@ -113,6 +119,8 @@ def process_training_program(data):
     if not programme_data:
         return {"error": "Échec de la génération du programme"}
 
+    print(f"\n🚀 Enregistrement du programme sur Bubble...\n")
+
     # 1️⃣ Enregistrement du Programme
     programme_response = send_to_bubble("create_programme", {
         "programme_nom": programme_data["programme"]["nom"],
@@ -120,10 +128,12 @@ def process_training_program(data):
     })
 
     if not programme_response:
+        print("❌ Échec de la création du programme dans Bubble")
         return {"error": "Échec de la création du programme"}
 
     programme_id = programme_response.get("id")
     if not programme_id:
+        print("❌ ID du programme manquant")
         return {"error": "ID programme manquant"}
 
     print(f"✅ Programme enregistré avec ID : {programme_id}")
@@ -191,10 +201,13 @@ def process_training_program(data):
 @app.route("/generate-program", methods=["POST"])
 def generate_program():
     data = request.json
+    print(f"\n🔍 Requête reçue : {json.dumps(data, indent=2)}")
+
     result = process_training_program(data)
+    
     return jsonify(result), 201 if "message" in result else 500
 
 # 📌 Démarrage de l’application Flask
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=True)
