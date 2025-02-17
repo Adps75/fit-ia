@@ -18,13 +18,20 @@ if not OPENAI_API_KEY:
 
 # 📌 Fonction pour envoyer les données à Bubble Backend Workflows
 def send_to_bubble(endpoint, payload):
-    url = BUBBLE_BASE_URL + endpoint
+    """ Envoie les données à Bubble et gère les erreurs """
+    url = f"{BUBBLE_BASE_URL}/{endpoint}"
     headers = {"Content-Type": "application/json"}
     response = requests.post(url, json=payload, headers=headers)
-    return response.json()
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"❌ Erreur lors de l'appel API Bubble {endpoint}: {response.text}")
+        return None
 
 # 📌 Génération du programme d'entraînement avec OpenAI
 def generate_training_program(data):
+    """ Génère un programme via OpenAI """
     prompt = f"""
     Tu es un coach expert en préparation physique et en planification de programmes sportifs.
     Génère un programme d'entraînement structuré en cycles et semaines sous un format JSON bien défini.
@@ -46,18 +53,28 @@ def generate_training_program(data):
     }}
     """
 
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7}
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
 
     response = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
 
     if response.status_code == 200:
         return json.loads(response.json()["choices"][0]["message"]["content"])
     else:
+        print(f"❌ Erreur OpenAI : {response.text}")
         return None
 
-# 📌 Fonction principale pour traiter le programme et l'envoyer à Bubble
+# 📌 Fonction principale pour traiter et envoyer le programme à Bubble
 def process_training_program(data):
+    """ Génère un programme et l'envoie aux API Workflows de Bubble """
     programme_data = generate_training_program(data)
 
     if not programme_data:
@@ -69,7 +86,12 @@ def process_training_program(data):
         "programme_durée": programme_data["programme"]["durée"]
     })
 
+    if not programme_response:
+        return {"error": "Échec de la création du programme"}
+
     programme_id = programme_response.get("id")
+    if not programme_id:
+        return {"error": "ID programme manquant"}
 
     # 2️⃣ Enregistrement des Cycles
     for cycle in programme_data["programme"]["list_cycles"]:
@@ -78,6 +100,9 @@ def process_training_program(data):
             "cycle_nom": cycle["nom"],
             "cycle_durée": cycle["durée"]
         })
+        if not cycle_response:
+            continue
+
         cycle_id = cycle_response.get("id")
 
         # 3️⃣ Enregistrement des Semaines
@@ -86,6 +111,9 @@ def process_training_program(data):
                 "cycle_id": cycle_id,
                 "semaine_numero": semaine["numéro"]
             })
+            if not semaine_response:
+                continue
+
             semaine_id = semaine_response.get("id")
 
             # 4️⃣ Enregistrement des Séances
@@ -95,6 +123,9 @@ def process_training_program(data):
                     "seance_nom": seance["nom"],
                     "seance_numero": seance["numéro"]
                 })
+                if not seance_response:
+                    continue
+
                 seance_id = seance_response.get("id")
 
                 # 5️⃣ Enregistrement des Exercices
@@ -104,6 +135,9 @@ def process_training_program(data):
                         "exercice_nom": exercice["nom"],
                         "exercice_temps_repos": exercice["temps_de_repos"]
                     })
+                    if not exercice_response:
+                        continue
+
                     exercice_id = exercice_response.get("id")
 
                     # 6️⃣ Enregistrement des Séries
