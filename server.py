@@ -19,15 +19,19 @@ if not OPENAI_API_KEY:
 
 # 📌 Fonction pour envoyer les données à Bubble Backend Workflows
 def send_to_bubble(endpoint, payload):
-    """ Envoie les données à Bubble et gère les erreurs """
+    """ Envoie les données à Bubble et log les erreurs """
     url = f"{BUBBLE_BASE_URL}/{endpoint}"
     headers = {"Content-Type": "application/json"}
+
+    print(f"\n➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")  # Log des données envoyées
+
     response = requests.post(url, json=payload, headers=headers)
+
+    print(f"🔄 Réponse API Bubble : Code {response.status_code} | Contenu : {response.text}")  # Log de la réponse
 
     if response.status_code == 200:
         return response.json()
     else:
-        print(f"❌ Erreur API Bubble {endpoint} | Code: {response.status_code} | Réponse: {response.text}")
         return None
 
 # 📌 Fonction pour nettoyer la réponse JSON d'OpenAI
