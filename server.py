@@ -52,7 +52,6 @@ def clean_json_response(response_text):
     Supprime les balises Markdown (```json ... ```).
     On ne garde que le contenu JSON brut.
     """
-    # Retire les balises ```json ... ```
     cleaned_text = re.sub(r"```json\s*(.*?)\s*```", r"\1", response_text, flags=re.DOTALL)
     return cleaned_text.strip()
 
@@ -64,7 +63,6 @@ def generate_training_program(data):
     """
     Génère un programme structuré via OpenAI, en JSON strict.
     """
-    # Prompt un peu plus strict pour obtenir du JSON valide
     prompt = f"""
     Tu es un coach expert en planification d'entraînements.
     Génère un programme d'entraînement EN JSON STRICTEMENT VALIDE, sans commentaire ni texte hors du JSON.
@@ -90,7 +88,18 @@ def generate_training_program(data):
             "list_semaines": [
               {{
                 "numéro": 1,
-                "list_séances": [...]
+                "list_séances": [
+                  {{
+                    "numéro": 1,
+                    "exercices": [
+                      {{
+                        "nom": "Développé couché",
+                        "séries": 3,
+                        "répétitions": 10
+                      }}
+                    ]
+                  }}
+                ]
               }}
             ]
           }}
@@ -106,9 +115,8 @@ def generate_training_program(data):
         "Content-Type": "application/json"
     }
 
-    # Prépare la requête à OpenAI
     payload = {
-        "model": "gpt-4o-mini",
+        "model": "gpt-4o-mini",  # ou "gpt-3.5-turbo" / "gpt-4" selon votre accès
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7
     }
@@ -133,10 +141,10 @@ def generate_training_program(data):
             print("❌ OpenAI a renvoyé un message vide.")
             return None
 
-        # Nettoyage (suppression des balises Markdown)
+        # Nettoyage du Markdown
         cleaned_json = clean_json_response(message_content)
 
-        # Tentative de parsing en JSON
+        # Parsing en JSON Python
         return json.loads(cleaned_json)
 
     except json.JSONDecodeError as e:
@@ -151,25 +159,27 @@ def generate_training_program(data):
 def process_training_program(data):
     """
     1. Génère un programme via OpenAI
-    2. L'envoie aux différentes API Workflows de Bubble (create_programme, create_cycle, etc.)
+    2. L'envoie aux différentes API Workflows de Bubble
+       (create_programme, create_cycle, create_semaine, create_seance, etc.)
     """
+    # Génération du JSON via OpenAI
     programme_data = generate_training_program(data)
     if not programme_data:
         return {"error": "Échec de la génération du programme"}
 
-    # 1️⃣ Enregistrement du Programme
+    # 1️⃣ Création du Programme
     programme_payload = {
         "programme_nom": programme_data["programme"]["nom"],
         "programme_durée": programme_data["programme"]["durée"]
     }
 
+    # Ajoute user_id si présent
     if "user_id" in data:
-        programme_payload["user_id"] = data["user_id"]  # On ajoute l'ID de l'utilisateur si présent
+        programme_payload["user_id"] = data["user_id"]
 
-    # Appel à Bubble pour créer le programme
     programme_response = send_to_bubble("create_programme", programme_payload)
 
-    # Vérification de la réponse : ID dans programme_response["response"]["id"]
+    # Vérifie la présence de l'ID
     if not programme_response or "response" not in programme_response or "id" not in programme_response["response"]:
         print(f"❌ Erreur : ID programme manquant dans la réponse Bubble {programme_response}")
         return {"error": "ID programme manquant"}
@@ -177,12 +187,10 @@ def process_training_program(data):
     programme_id = programme_response["response"]["id"]
     print(f"✅ Programme enregistré avec ID : {programme_id}")
 
-    # Vérifie qu'il y a bien "list_cycles" dans la structure
+    # 2️⃣ Parcours des cycles
     if "list_cycles" not in programme_data["programme"]:
-        # Pas de cycles => on s'arrête là
         return {"message": "Programme enregistré (aucun cycle renseigné)."}
 
-    # 2️⃣ Enregistrement des Cycles
     for cycle in programme_data["programme"]["list_cycles"]:
         cycle_nom = cycle.get("nom", "Cycle sans nom")
         cycle_duree = cycle.get("durée", 1)
@@ -198,14 +206,12 @@ def process_training_program(data):
 
         cycle_id = cycle_response["response"]["id"]
 
-        # Si on a une liste de semaines
+        # 3️⃣ Parcours des semaines
         if "list_semaines" not in cycle:
             continue
 
-        # 3️⃣ Enregistrement des Semaines
         for semaine in cycle["list_semaines"]:
             semaine_numero = semaine.get("numéro", 1)
-
             semaine_response = send_to_bubble("create_semaine", {
                 "cycle_id": cycle_id,
                 "semaine_numero": semaine_numero
@@ -216,14 +222,15 @@ def process_training_program(data):
 
             semaine_id = semaine_response["response"]["id"]
 
-            # 4️⃣ Enregistrement des Séances
+            # 4️⃣ Parcours des séances
             if "list_séances" not in semaine:
                 continue
 
             for seance in semaine["list_séances"]:
-                seance_nom = seance.get("nom", "Séance")
+                seance_nom = seance.get("nom", f"Semaine {semaine_numero} - Séance")
                 seance_numero = seance.get("numéro", 1)
 
+                # Création de la Séance
                 seance_response = send_to_bubble("create_seance", {
                     "semaine_id": semaine_id,
                     "seance_nom": seance_nom,
@@ -235,12 +242,14 @@ def process_training_program(data):
 
                 seance_id = seance_response["response"]["id"]
 
-                # 5️⃣ Enregistrement des Exercices
-                if "list_exercices" not in seance:
+                # 5️⃣ Parcours des Exercices (si la clé "exercices" existe)
+                if "exercices" not in seance:
                     continue
 
-                for exercice in seance["list_exercices"]:
+                for exercice in seance["exercices"]:
                     exercice_nom = exercice.get("nom", "Exercice")
+                    # On peut mettre un temps de repos par défaut
+                    # s'il n'est pas présent dans la réponse
                     exercice_temps = exercice.get("temps_de_repos", 60)
 
                     exercice_response = send_to_bubble("create_exercice", {
@@ -254,14 +263,16 @@ def process_training_program(data):
 
                     exercice_id = exercice_response["response"]["id"]
 
-                    # 6️⃣ Enregistrement des Séries
-                    if "list_série" not in exercice:
+                    # 6️⃣ Parcours des séries (si la clé "séries" existe)
+                    if "séries" not in exercice:
                         continue
 
-                    for serie in exercice["list_série"]:
+                    for serie in exercice["séries"]:
+                        # On récupère la charge, les répétitions, etc.
                         serie_charge = serie.get("charge", 0)
                         serie_reps = serie.get("répétitions", 0)
-                        serie_nombre = serie.get("séries", 1)
+                        serie_nombre = serie.get("nombre_series", 1)  
+                        # Par exemple, renommez "nombre_series" si vous voulez "séries" dans l'API Bubble
 
                         send_to_bubble("create_serie", {
                             "exercice_id": exercice_id,
@@ -280,7 +291,6 @@ def process_training_program(data):
 def generate_program():
     data = request.json
     result = process_training_program(data)
-    # Si "message" est dans le dict => succès (201), sinon (error) => 500
     return jsonify(result), 201 if "message" in result else 500
 
 
