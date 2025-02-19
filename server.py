@@ -50,6 +50,71 @@ def send_to_bubble(endpoint, payload):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 📌 Fonction pour générer un programme d'entraînement avec OpenAI
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_training_program(data):
+    """
+    Génère un programme structuré via OpenAI en JSON strict.
+    """
+    prompt = f"""
+    Tu es un coach expert en préparation physique.
+    Génère un programme d'entraînement en JSON strictement valide.
+    
+    Paramètres :
+    - Sport : {data["sport"]}
+    - Niveau : {data["level"]}
+    - Fréquence : {data["frequency"]} fois/semaine
+    - Objectif : {data["goal"]}
+    - Genre : {data["genre"]}
+
+    La sortie doit être uniquement du JSON, avec la structure suivante :
+    
+    ```json
+    {{
+      "programme": {{
+        "nom": "{data.get('programme_nom', 'Programme personnalisé')}",
+        "durée": {data.get('programme_duree', 12)},
+        "list_cycles": []
+      }}
+    }}
+    ```
+    """
+    
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
+    
+    response = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
+    
+    if response.status_code != 200:
+        print(f"❌ Erreur OpenAI : {response.status_code} | {response.text}")
+        return None
+    
+    try:
+        response_json = response.json()
+        print(f"🔄 Réponse OpenAI : {json.dumps(response_json, indent=2)}")
+        
+        if "choices" not in response_json or not response_json["choices"]:
+            print("❌ OpenAI a renvoyé une réponse vide.")
+            return None
+        
+        message_content = response_json["choices"][0]["message"]["content"]
+        return json.loads(message_content)
+    
+    except json.JSONDecodeError as e:
+        print(f"❌ Erreur JSON : {str(e)}")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 📌 Fonction principale pour traiter le programme et l'envoyer à Bubble
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -84,56 +149,6 @@ def process_training_program(data):
         cycle_response = send_to_bubble("create_cycle", cycle_payload)
         if not cycle_response or "response" not in cycle_response or "id" not in cycle_response["response"]:
             continue
-
-        cycle_id = cycle_response["response"]["id"]
-
-        for semaine in cycle.get("list_semaines", []):
-            semaine_payload = {
-                "cycle_id": cycle_id,
-                "semaine_numero": semaine.get("numéro", 1),
-                "programme_id": programme_id
-            }
-            semaine_response = send_to_bubble("create_semaine", semaine_payload)
-            if not semaine_response or "response" not in semaine_response or "id" not in semaine_response["response"]:
-                continue
-
-            semaine_id = semaine_response["response"]["id"]
-
-            for seance in semaine.get("list_séances", []):
-                seance_payload = {
-                    "semaine_id": semaine_id,
-                    "seance_nom": seance.get("nom", f"Semaine {semaine.get('numéro', 1)} - Séance"),
-                    "seance_numero": seance.get("numéro", 1),
-                    "programme_id": programme_id
-                }
-                seance_response = send_to_bubble("create_seance", seance_payload)
-                if not seance_response or "response" not in seance_response or "id" not in seance_response["response"]:
-                    continue
-
-                seance_id = seance_response["response"]["id"]
-
-                for exercice in seance.get("list_exercices", []):
-                    exercice_payload = {
-                        "seance_id": seance_id,
-                        "exercice_nom": exercice.get("nom", "Exercice"),
-                        "exercice_temps_repos": exercice.get("temps_de_repos", 60),
-                        "programme_id": programme_id
-                    }
-                    exercice_response = send_to_bubble("create_exercice", exercice_payload)
-                    if not exercice_response or "response" not in exercice_response or "id" not in exercice_response["response"]:
-                        continue
-
-                    exercice_id = exercice_response["response"]["id"]
-
-                    for serie in exercice.get("list_séries", []):
-                        serie_payload = {
-                            "exercice_id": exercice_id,
-                            "serie_charge": serie.get("charge", 0),
-                            "serie_repetitions": serie.get("répétitions", 0),
-                            "serie_nombre": serie.get("séries", 1),
-                            "programme_id": programme_id
-                        }
-                        send_to_bubble("create_serie", serie_payload)
 
     return {"message": "Programme enregistré avec succès !"}
 
