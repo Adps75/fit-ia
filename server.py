@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import os
 import json
-import re  # Import pour nettoyer les balises Markdown dans la réponse JSON
+import re  # Pour nettoyer les balises Markdown
 
 app = Flask(__name__)
 
@@ -24,7 +24,7 @@ if not BUBBLE_API_KEY:
 # 📌 Fonction pour envoyer les données à Bubble Backend Workflows
 def send_to_bubble(endpoint, payload):
     """ Envoie les données à Bubble avec Authorization """
-    url = BUBBLE_BASE_URL + endpoint
+    url = f"{BUBBLE_BASE_URL}{endpoint}"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {BUBBLE_API_KEY}"
@@ -50,17 +50,17 @@ def clean_json_response(response_text):
 def generate_training_program(data):
     """ Génère un programme structuré via OpenAI """
     prompt = f"""
-    Tu es un coach expert en préparation physique et en planification de programmes sportifs.
-    Génère un programme d'entraînement structuré en cycles et semaines sous un format JSON bien défini.
+    Tu es un coach expert en planification d'entraînements.
+    Génère un programme structuré en JSON, sans texte additionnel.
 
     Paramètres :
     - Sport : {data["sport"]}
     - Niveau : {data["level"]}
-    - Fréquence d'entraînement : {data["frequency"]} fois par semaine
+    - Fréquence : {data["frequency"]} fois par semaine
     - Objectif : {data["goal"]}
     - Genre : {data["genre"]}
 
-    Retourne un JSON **sans texte additionnel** :
+    JSON attendu :
     ```json
     {{
       "programme": {{
@@ -91,7 +91,7 @@ def generate_training_program(data):
 
     try:
         response_json = response.json()
-        print(f"🔄 Réponse brute OpenAI : {json.dumps(response_json, indent=2)}")
+        print(f"🔄 Réponse OpenAI : {json.dumps(response_json, indent=2)}")
 
         if "choices" not in response_json or not response_json["choices"]:
             print("❌ OpenAI a renvoyé une réponse vide.")
@@ -108,7 +108,7 @@ def generate_training_program(data):
         return json.loads(cleaned_json)
 
     except json.JSONDecodeError as e:
-        print(f"❌ Erreur de décodage JSON : {str(e)}")
+        print(f"❌ Erreur JSON : {str(e)}")
         print(f"🔍 Réponse brute OpenAI après nettoyage : {cleaned_json}")
         return None
 
@@ -121,18 +121,21 @@ def process_training_program(data):
         return {"error": "Échec de la génération du programme"}
 
     # 1️⃣ Enregistrement du Programme
-    programme_response = send_to_bubble("create_programme", {
+    programme_payload = {
         "programme_nom": programme_data["programme"]["nom"],
         "programme_durée": programme_data["programme"]["durée"]
-    })
+    }
 
-    if not programme_response:
-        return {"error": "Échec de la création du programme"}
+    if "user_id" in data:
+        programme_payload["user_id"] = data["user_id"]  # Ajoute l'ID de l'utilisateur
 
-    programme_id = programme_response.get("id")
-    if not programme_id:
+    programme_response = send_to_bubble("create_programme", programme_payload)
+
+    if not programme_response or "id" not in programme_response:
+        print(f"❌ Erreur : ID programme manquant dans la réponse Bubble {programme_response}")
         return {"error": "ID programme manquant"}
 
+    programme_id = programme_response["id"]
     print(f"✅ Programme enregistré avec ID : {programme_id}")
 
     # 2️⃣ Enregistrement des Cycles
