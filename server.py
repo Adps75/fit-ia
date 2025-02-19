@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import os
 import json
-import re  # Pour nettoyer les balises Markdown
+import time  # Ajouté pour éviter les problèmes de récupération immédiate
 
 app = Flask(__name__)
 
@@ -22,8 +22,8 @@ if not BUBBLE_API_KEY:
     raise ValueError("❌ Clé API Bubble manquante ! Ajoutez-la dans les variables d'environnement.")
 
 # 📌 Fonction pour envoyer les données à Bubble Backend Workflows
-def send_to_bubble(endpoint, payload):
-    """ Envoie les données à Bubble avec Authorization """
+def send_to_bubble(endpoint, payload, retrieve_id=False):
+    """ Envoie les données à Bubble et peut récupérer un ID spécifique """
     url = f"{BUBBLE_BASE_URL}{endpoint}"
     headers = {
         "Content-Type": "application/json",
@@ -31,36 +31,36 @@ def send_to_bubble(endpoint, payload):
     }
     
     response = requests.post(url, json=payload, headers=headers)
-    
+
     print(f"➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")
     print(f"🔄 Réponse API Bubble : {response.status_code} | {response.text}")
 
     if response.status_code == 200:
-        return response.json()
+        response_json = response.json()
+
+        # Si on veut récupérer l'ID, on le retourne
+        if retrieve_id:
+            return response_json.get("response", {}).get("programme_id")
+
+        return response_json
     else:
         return None
-
-# 📌 Fonction pour nettoyer la réponse JSON d'OpenAI
-def clean_json_response(response_text):
-    """ Supprime les balises Markdown pour ne garder que le JSON brut """
-    cleaned_text = re.sub(r"```json\n(.*?)\n```", r"\1", response_text, flags=re.DOTALL)
-    return cleaned_text.strip()
 
 # 📌 Génération du programme d'entraînement avec OpenAI
 def generate_training_program(data):
     """ Génère un programme structuré via OpenAI """
     prompt = f"""
-    Tu es un coach expert en planification d'entraînements.
-    Génère un programme structuré en JSON, sans texte additionnel.
+    Tu es un coach expert en préparation physique et en planification de programmes sportifs.
+    Génère un programme d'entraînement structuré en cycles et semaines sous un format JSON bien défini.
 
     Paramètres :
     - Sport : {data["sport"]}
     - Niveau : {data["level"]}
-    - Fréquence : {data["frequency"]} fois par semaine
+    - Fréquence d'entraînement : {data["frequency"]} fois par semaine
     - Objectif : {data["goal"]}
     - Genre : {data["genre"]}
 
-    JSON attendu :
+    Retourne un JSON **sans texte additionnel** :
     ```json
     {{
       "programme": {{
@@ -91,7 +91,7 @@ def generate_training_program(data):
 
     try:
         response_json = response.json()
-        print(f"🔄 Réponse OpenAI : {json.dumps(response_json, indent=2)}")
+        print(f"🔄 Réponse brute OpenAI : {json.dumps(response_json, indent=2)}")
 
         if "choices" not in response_json or not response_json["choices"]:
             print("❌ OpenAI a renvoyé une réponse vide.")
@@ -102,14 +102,11 @@ def generate_training_program(data):
             print("❌ OpenAI a renvoyé un message vide.")
             return None
 
-        # 🔥 Nettoyage du JSON
-        cleaned_json = clean_json_response(message_content)
-
-        return json.loads(cleaned_json)
+        return json.loads(message_content)
 
     except json.JSONDecodeError as e:
-        print(f"❌ Erreur JSON : {str(e)}")
-        print(f"🔍 Réponse brute OpenAI après nettoyage : {cleaned_json}")
+        print(f"❌ Erreur de décodage JSON : {str(e)}")
+        print(f"🔍 Réponse brute OpenAI après nettoyage : {response.text}")
         return None
 
 # 📌 Fonction principale pour traiter le programme et l'envoyer à Bubble
@@ -120,70 +117,56 @@ def process_training_program(data):
     if not programme_data:
         return {"error": "Échec de la génération du programme"}
 
-    # 1️⃣ Enregistrement du Programme
-    programme_payload = {
+    # 1️⃣ Enregistrement du Programme avec l'ID utilisateur
+    programme_id = send_to_bubble("create_programme", {
         "programme_nom": programme_data["programme"]["nom"],
-        "programme_durée": programme_data["programme"]["durée"]
-    }
+        "programme_durée": programme_data["programme"]["durée"],
+        "user_id": data["user_id"]  # On envoie bien l'ID utilisateur
+    }, retrieve_id=True)
 
-    if "user_id" in data:
-        programme_payload["user_id"] = data["user_id"]  # Ajoute l'ID de l'utilisateur
+    if not programme_id:
+        return {"error": "Impossible de récupérer l'ID du programme"}
 
-    programme_response = send_to_bubble("create_programme", programme_payload)
-
-    if not programme_response or "id" not in programme_response:
-        print(f"❌ Erreur : ID programme manquant dans la réponse Bubble {programme_response}")
-        return {"error": "ID programme manquant"}
-
-    programme_id = programme_response["id"]
     print(f"✅ Programme enregistré avec ID : {programme_id}")
 
     # 2️⃣ Enregistrement des Cycles
     for cycle in programme_data["programme"]["list_cycles"]:
-        cycle_response = send_to_bubble("create_cycle", {
+        cycle_id = send_to_bubble("create_cycle", {
             "programme_id": programme_id,
             "cycle_nom": cycle["nom"],
             "cycle_durée": cycle["durée"]
-        })
-        if not cycle_response:
+        }, retrieve_id=True)
+        if not cycle_id:
             continue
-
-        cycle_id = cycle_response.get("id")
 
         # 3️⃣ Enregistrement des Semaines
         for semaine in cycle["list_semaines"]:
-            semaine_response = send_to_bubble("create_semaine", {
+            semaine_id = send_to_bubble("create_semaine", {
                 "cycle_id": cycle_id,
                 "semaine_numero": semaine["numéro"]
-            })
-            if not semaine_response:
+            }, retrieve_id=True)
+            if not semaine_id:
                 continue
-
-            semaine_id = semaine_response.get("id")
 
             # 4️⃣ Enregistrement des Séances
             for seance in semaine["list_séances"]:
-                seance_response = send_to_bubble("create_seance", {
+                seance_id = send_to_bubble("create_seance", {
                     "semaine_id": semaine_id,
                     "seance_nom": seance["nom"],
                     "seance_numero": seance["numéro"]
-                })
-                if not seance_response:
+                }, retrieve_id=True)
+                if not seance_id:
                     continue
-
-                seance_id = seance_response.get("id")
 
                 # 5️⃣ Enregistrement des Exercices
                 for exercice in seance["list_exercices"]:
-                    exercice_response = send_to_bubble("create_exercice", {
+                    exercice_id = send_to_bubble("create_exercice", {
                         "seance_id": seance_id,
                         "exercice_nom": exercice["nom"],
                         "exercice_temps_repos": exercice["temps_de_repos"]
-                    })
-                    if not exercice_response:
+                    }, retrieve_id=True)
+                    if not exercice_id:
                         continue
-
-                    exercice_id = exercice_response.get("id")
 
                     # 6️⃣ Enregistrement des Séries
                     for serie in exercice["list_série"]:
