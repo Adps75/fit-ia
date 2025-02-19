@@ -11,20 +11,38 @@ OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
 # 🔹 Configuration Bubble
 BUBBLE_BASE_URL = "https://ton-app.bubbleapps.io/version-test/api/1.1/wf/"
+BUBBLE_API_KEY = os.getenv("BUBBLE_API_KEY")  # Assurez-vous d'ajouter cette clé dans les variables d'environnement
 
 # 🔹 Vérification des clés API
 if not OPENAI_API_KEY:
     raise ValueError("❌ Clé API OpenAI manquante ! Ajoutez-la dans les variables d'environnement.")
 
+if not BUBBLE_API_KEY:
+    raise ValueError("❌ Clé API Bubble manquante ! Ajoutez-la dans les variables d'environnement.")
+
 # 📌 Fonction pour envoyer les données à Bubble Backend Workflows
 def send_to_bubble(endpoint, payload):
+    """ Envoie les données à Bubble avec Authorization """
     url = BUBBLE_BASE_URL + endpoint
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {BUBBLE_API_KEY}"  # Ajout de l'authentification
+    }
+    
+    print(f"\n➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")
+    
     response = requests.post(url, json=payload, headers=headers)
-    return response.json()
+
+    print(f"🔄 Réponse API Bubble : Code {response.status_code} | Contenu : {response.text}")
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return None
 
 # 📌 Génération du programme d'entraînement avec OpenAI
 def generate_training_program(data):
+    """ Génère un programme structuré via OpenAI """
     prompt = f"""
     Tu es un coach expert en préparation physique et en planification de programmes sportifs.
     Génère un programme d'entraînement structuré en cycles et semaines sous un format JSON bien défini.
@@ -46,8 +64,16 @@ def generate_training_program(data):
     }}
     """
 
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7}
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
 
     response = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
 
@@ -58,6 +84,7 @@ def generate_training_program(data):
 
 # 📌 Fonction principale pour traiter le programme et l'envoyer à Bubble
 def process_training_program(data):
+    """ Génère un programme et l'envoie aux API Workflows de Bubble """
     programme_data = generate_training_program(data)
 
     if not programme_data:
@@ -69,7 +96,14 @@ def process_training_program(data):
         "programme_durée": programme_data["programme"]["durée"]
     })
 
+    if not programme_response:
+        return {"error": "Échec de la création du programme"}
+
     programme_id = programme_response.get("id")
+    if not programme_id:
+        return {"error": "ID programme manquant"}
+
+    print(f"✅ Programme enregistré avec ID : {programme_id}")
 
     # 2️⃣ Enregistrement des Cycles
     for cycle in programme_data["programme"]["list_cycles"]:
@@ -78,6 +112,9 @@ def process_training_program(data):
             "cycle_nom": cycle["nom"],
             "cycle_durée": cycle["durée"]
         })
+        if not cycle_response:
+            continue
+
         cycle_id = cycle_response.get("id")
 
         # 3️⃣ Enregistrement des Semaines
@@ -86,6 +123,9 @@ def process_training_program(data):
                 "cycle_id": cycle_id,
                 "semaine_numero": semaine["numéro"]
             })
+            if not semaine_response:
+                continue
+
             semaine_id = semaine_response.get("id")
 
             # 4️⃣ Enregistrement des Séances
@@ -95,6 +135,9 @@ def process_training_program(data):
                     "seance_nom": seance["nom"],
                     "seance_numero": seance["numéro"]
                 })
+                if not seance_response:
+                    continue
+
                 seance_id = seance_response.get("id")
 
                 # 5️⃣ Enregistrement des Exercices
@@ -104,6 +147,9 @@ def process_training_program(data):
                         "exercice_nom": exercice["nom"],
                         "exercice_temps_repos": exercice["temps_de_repos"]
                     })
+                    if not exercice_response:
+                        continue
+
                     exercice_id = exercice_response.get("id")
 
                     # 6️⃣ Enregistrement des Séries
