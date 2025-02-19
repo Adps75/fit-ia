@@ -2,7 +2,8 @@ from flask import Flask, request, jsonify
 import requests
 import os
 import json
-import time  # Ajouté pour éviter les problèmes de récupération immédiate
+import time
+import re  # Ajouté pour nettoyer les balises Markdown JSON
 
 app = Flask(__name__)
 
@@ -21,7 +22,7 @@ if not OPENAI_API_KEY:
 if not BUBBLE_API_KEY:
     raise ValueError("❌ Clé API Bubble manquante ! Ajoutez-la dans les variables d'environnement.")
 
-# 📌 Fonction pour envoyer les données à Bubble Backend Workflows
+# 📌 Fonction pour envoyer les données à Bubble et récupérer un ID
 def send_to_bubble(endpoint, payload, retrieve_id=False):
     """ Envoie les données à Bubble et peut récupérer un ID spécifique """
     url = f"{BUBBLE_BASE_URL}{endpoint}"
@@ -29,22 +30,31 @@ def send_to_bubble(endpoint, payload, retrieve_id=False):
         "Content-Type": "application/json",
         "Authorization": f"Bearer {BUBBLE_API_KEY}"
     }
-    
-    response = requests.post(url, json=payload, headers=headers)
 
+    response = requests.post(url, json=payload, headers=headers)
+    
     print(f"➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")
     print(f"🔄 Réponse API Bubble : {response.status_code} | {response.text}")
 
     if response.status_code == 200:
         response_json = response.json()
 
-        # Si on veut récupérer l'ID, on le retourne
         if retrieve_id:
-            return response_json.get("response", {}).get("programme_id")
+            programme_id = response_json.get("response", {}).get("programme_id")
+            if not programme_id:
+                print("❌ Erreur : Impossible de récupérer l'ID du programme.")
+            return programme_id
 
         return response_json
     else:
+        print("❌ Erreur lors de l'envoi à Bubble")
         return None
+
+# 📌 Nettoyage de la réponse OpenAI pour retirer les balises Markdown JSON
+def clean_json_response(response_text):
+    """ Supprime les balises Markdown pour extraire uniquement le JSON """
+    cleaned_text = re.sub(r"```json\n(.*?)\n```", r"\1", response_text, flags=re.DOTALL).strip()
+    return cleaned_text
 
 # 📌 Génération du programme d'entraînement avec OpenAI
 def generate_training_program(data):
@@ -102,11 +112,12 @@ def generate_training_program(data):
             print("❌ OpenAI a renvoyé un message vide.")
             return None
 
-        return json.loads(message_content)
+        cleaned_json = clean_json_response(message_content)
+        return json.loads(cleaned_json)
 
     except json.JSONDecodeError as e:
         print(f"❌ Erreur de décodage JSON : {str(e)}")
-        print(f"🔍 Réponse brute OpenAI après nettoyage : {response.text}")
+        print(f"🔍 Réponse brute OpenAI après nettoyage : {cleaned_json}")
         return None
 
 # 📌 Fonction principale pour traiter le programme et l'envoyer à Bubble
@@ -121,7 +132,7 @@ def process_training_program(data):
     programme_id = send_to_bubble("create_programme", {
         "programme_nom": programme_data["programme"]["nom"],
         "programme_durée": programme_data["programme"]["durée"],
-        "user_id": data["user_id"]  # On envoie bien l'ID utilisateur
+        "user_id": data.get("user_id")  # Utilisation de .get() pour éviter KeyError
     }, retrieve_id=True)
 
     if not programme_id:
