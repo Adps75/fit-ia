@@ -11,7 +11,7 @@ OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
 # 🔹 Configuration Bubble
 BUBBLE_BASE_URL = "https://ton-app.bubbleapps.io/version-test/api/1.1/wf/"
-BUBBLE_API_KEY = os.getenv("BUBBLE_API_KEY")  # Assurez-vous d'ajouter cette clé dans les variables d'environnement
+BUBBLE_API_KEY = os.getenv("BUBBLE_API_KEY")
 
 # 🔹 Vérification des clés API
 if not OPENAI_API_KEY:
@@ -26,14 +26,13 @@ def send_to_bubble(endpoint, payload):
     url = BUBBLE_BASE_URL + endpoint
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {BUBBLE_API_KEY}"  # Ajout de l'authentification
+        "Authorization": f"Bearer {BUBBLE_API_KEY}"
     }
     
-    print(f"\n➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")
-    
     response = requests.post(url, json=payload, headers=headers)
-
-    print(f"🔄 Réponse API Bubble : Code {response.status_code} | Contenu : {response.text}")
+    
+    print(f"➡️ Envoi à Bubble : {url}\n📦 Payload : {json.dumps(payload, indent=2)}")
+    print(f"🔄 Réponse API Bubble : {response.status_code} | {response.text}")
 
     if response.status_code == 200:
         return response.json()
@@ -77,9 +76,28 @@ def generate_training_program(data):
 
     response = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
 
-    if response.status_code == 200:
-        return json.loads(response.json()["choices"][0]["message"]["content"])
-    else:
+    if response.status_code != 200:
+        print(f"❌ Erreur OpenAI : {response.status_code} | {response.text}")
+        return None
+
+    try:
+        response_json = response.json()
+        print(f"🔄 Réponse brute OpenAI : {json.dumps(response_json, indent=2)}")
+
+        if "choices" not in response_json or not response_json["choices"]:
+            print("❌ OpenAI a renvoyé une réponse vide.")
+            return None
+
+        message_content = response_json["choices"][0]["message"]["content"]
+        if not message_content:
+            print("❌ OpenAI a renvoyé un message vide.")
+            return None
+
+        return json.loads(message_content)
+
+    except json.JSONDecodeError as e:
+        print(f"❌ Erreur de décodage JSON : {str(e)}")
+        print(f"🔍 Réponse brute OpenAI : {response.text}")
         return None
 
 # 📌 Fonction principale pour traiter le programme et l'envoyer à Bubble
