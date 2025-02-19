@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import os
 import json
+import re  # Import pour nettoyer les balises Markdown dans la réponse JSON
 
 app = Flask(__name__)
 
@@ -10,7 +11,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
 # 🔹 Configuration Bubble
-BUBBLE_BASE_URL = "https://ton-app.bubbleapps.io/version-test/api/1.1/wf/"
+BUBBLE_BASE_URL = "https://fitia-47460.bubbleapps.io/version-test/api/1.1/wf/"
 BUBBLE_API_KEY = os.getenv("BUBBLE_API_KEY")
 
 # 🔹 Vérification des clés API
@@ -39,6 +40,12 @@ def send_to_bubble(endpoint, payload):
     else:
         return None
 
+# 📌 Fonction pour nettoyer la réponse JSON d'OpenAI
+def clean_json_response(response_text):
+    """ Supprime les balises Markdown pour ne garder que le JSON brut """
+    cleaned_text = re.sub(r"```json\n(.*?)\n```", r"\1", response_text, flags=re.DOTALL)
+    return cleaned_text.strip()
+
 # 📌 Génération du programme d'entraînement avec OpenAI
 def generate_training_program(data):
     """ Génère un programme structuré via OpenAI """
@@ -53,7 +60,8 @@ def generate_training_program(data):
     - Objectif : {data["goal"]}
     - Genre : {data["genre"]}
 
-    Retourne un JSON sans texte additionnel :
+    Retourne un JSON **sans texte additionnel** :
+    ```json
     {{
       "programme": {{
         "nom": "{data.get('programme_nom', 'Programme personnalisé')}",
@@ -61,6 +69,7 @@ def generate_training_program(data):
         "list_cycles": [...]
       }}
     }}
+    ```
     """
 
     headers = {
@@ -93,11 +102,14 @@ def generate_training_program(data):
             print("❌ OpenAI a renvoyé un message vide.")
             return None
 
-        return json.loads(message_content)
+        # 🔥 Nettoyage du JSON
+        cleaned_json = clean_json_response(message_content)
+
+        return json.loads(cleaned_json)
 
     except json.JSONDecodeError as e:
         print(f"❌ Erreur de décodage JSON : {str(e)}")
-        print(f"🔍 Réponse brute OpenAI : {response.text}")
+        print(f"🔍 Réponse brute OpenAI après nettoyage : {cleaned_json}")
         return None
 
 # 📌 Fonction principale pour traiter le programme et l'envoyer à Bubble
