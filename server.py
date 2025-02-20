@@ -40,14 +40,17 @@ def clean_json_response(response_text: str) -> str:
 def generate_training_program(data):
     prompt = f"""
     Tu es un coach expert en planification d'entraînements.
-    Génère un programme d'entraînement EN JSON STRICTEMENT VALIDE.
+    Génère un programme d'entraînement EN JSON STRICTEMENT VALIDE, sans texte explicatif.
     Paramètres :
     - Sport : {data.get("sport", "")}
     - Niveau : {data.get("level", "")}
     - Fréquence : {data.get("frequency", "")} fois par semaine
     - Objectif : {data.get("goal", "")}
     - Genre : {data.get("genre", "")}
+
+    Assure-toi que la sortie est **uniquement** un JSON, sans texte en dehors du JSON.
     """
+    
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7}
     response = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
@@ -72,7 +75,13 @@ def generate_training_program(data):
             return None
         
         print(f"✅ Réponse OpenAI après nettoyage : {cleaned_json}")
-        return json.loads(cleaned_json)
+        programme_data = json.loads(cleaned_json)
+        
+        if not isinstance(programme_data, dict):
+            print("❌ Erreur : La réponse OpenAI n'est pas un dictionnaire JSON valide.")
+            return None
+        
+        return programme_data
     except json.JSONDecodeError as e:
         print(f"❌ Erreur de décodage JSON: {str(e)}")
         print(f"🔍 Réponse brute OpenAI après nettoyage : {cleaned_json}")
@@ -84,7 +93,7 @@ def process_training_program(data):
     if not programme_data:
         return {"error": "Échec de la génération du programme"}
     
-    if "programme" not in programme_data:
+    if not isinstance(programme_data, dict) or "programme" not in programme_data:
         print("❌ Erreur : La clé 'programme' est absente du JSON retourné.")
         print(f"🔍 JSON reçu : {programme_data}")
         return {"error": "Données du programme invalides"}
