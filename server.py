@@ -48,6 +48,10 @@ def clean_json_response(response_text):
     return re.sub(r"```json\s*(.*?)\s*```", r"\1", response_text, flags=re.DOTALL).strip()
 
 
+# ---------------------------------------------------
+# 1) GENERATE PROGRAM (ENTRAINEMENT)
+# ---------------------------------------------------
+
 def generate_training_program(data):
     """
     Genere un JSON strict contenant:
@@ -282,6 +286,117 @@ def generate_program():
     result = process_training_program(data)
     return jsonify(result), 201 if "message" in result else 500
 
+# ---------------------------------------------------
+# 2) GENERATE NUTRITION
+# ---------------------------------------------------
+
+def generate_nutrition_json(data):
+    """
+    Role: specialiste nutrition sportive.
+    On veut un plan JSON:
+      {
+        "plan_nutrition": {
+          "kcal_jour": ...,
+          "proteines_jour": ...,
+          "lipides_jour": ...,
+          "glucides_jour": ...,
+          "aliments_proteines": [...],
+          "aliments_lipides": [...],
+          "aliments_glucides": [...]
+        }
+      }
+    """
+    prompt = f"""
+    Tu es un specialiste de la nutrition sportive.
+    Genere un plan nutritionnel au format JSON sans accents, 
+    sans texte additionnel hors JSON.
+
+    Champs obligatoires:
+    - plan_nutrition.kcal_jour (int)
+    - plan_nutrition.proteines_jour (int)
+    - plan_nutrition.lipides_jour (int)
+    - plan_nutrition.glucides_jour (int)
+    - plan_nutrition.aliments_proteines (liste de string)
+    - plan_nutrition.aliments_lipides (liste de string)
+    - plan_nutrition.aliments_glucides (liste de string)
+
+    Parametres:
+      age: {data['age']}
+      genre: {data['genre']}
+      taille: {data['taille']}
+      poids: {data['poids']}
+      tour_bras: {data['tour_bras']}
+      tour_cuisse: {data['tour_cuisse']}
+      tour_hanche: {data['tour_hanche']}
+      tour_nombril: {data['tour_nombril']}
+      sport: {data['sport']}
+      objectif: {data['objectif']}
+      objectif_poids: {data['objectif_poids']}
+      niveau: {data['niveau']}
+      frequence: {data['frequence']}
+      pas_semaine: {data['pas_semaine']}
+    """
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
+    resp = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
+    if resp.status_code != 200:
+        print("Erreur OpenAI (generate_nutrition_json):", resp.status_code, resp.text)
+        return None
+
+    try:
+        rjson = resp.json()
+        if "choices" not in rjson or not rjson["choices"]:
+            return None
+        content = rjson["choices"][0]["message"]["content"]
+        cleaned = clean_json_response(content)
+        return json.loads(cleaned)
+    except:
+        return None
+
+
+def process_nutrition(data):
+    """
+    Genere le plan nutritionnel via ChatGPT. 
+    On peut ensuite en faire un create_nutrition sur Bubble, etc.
+    """
+    nut_data = generate_nutrition_json(data)
+    if not nut_data:
+        return {"error": "Echec generation plan nutrition"}
+
+    plan = nut_data["plan_nutrition"]
+
+    # Exemple d'appel a Bubble si tu veux creer en base:
+    # payload = {
+    #     "kcal_jour": plan["kcal_jour"],
+    #     "proteines_jour": plan["proteines_jour"],
+    #     "lipides_jour": plan["lipides_jour"],
+    #     "glucides_jour": plan["glucides_jour"],
+    #     "aliments_proteines": plan["aliments_proteines"],
+    #     "aliments_lipides": plan["aliments_lipides"],
+    #     "aliments_glucides": plan["aliments_glucides"]
+    # }
+    # reponse_bubble = send_to_bubble("create_nutrition", payload)
+
+    return {"message": "Plan nutrition genere avec succes!", "plan_nutrition": plan}
+
+
+@app.route("/generate-nutrition", methods=["POST"])
+def generate_nutrition():
+    data = request.json
+    result = process_nutrition(data)
+    return jsonify(result), 201 if "message" in result else 500
+
+# ---------------------------------------------------
+# MAIN
+# ---------------------------------------------------
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
