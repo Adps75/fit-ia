@@ -29,7 +29,13 @@ def update_parent_list(endpoint, parent_id, field_name, child_id):
     return send_to_bubble(endpoint, payload)
 
 def clean_json_response(response_text: str) -> str:
-    return re.sub(r"```json\s*(.*?)\s*```", r"\1", response_text, flags=re.DOTALL).strip()
+    """
+    Supprime les balises Markdown (```json ... ```) mais conserve le JSON intact.
+    """
+    match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return response_text.strip()
 
 def generate_training_program(data):
     prompt = f"""
@@ -45,12 +51,32 @@ def generate_training_program(data):
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7}
     response = requests.post(OPENAI_ENDPOINT, json=payload, headers=headers)
+    
     if response.status_code != 200:
+        print(f"❌ OpenAI Error {response.status_code}: {response.text}")
         return None
-    response_json = response.json()
-    message_content = response_json.get("choices", [{}])[0].get("message", {}).get("content", "")
-    cleaned_json = clean_json_response(message_content)
-    return json.loads(cleaned_json) if cleaned_json else None
+    
+    try:
+        response_json = response.json()
+        message_content = response_json.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        
+        if not message_content:
+            print("❌ OpenAI a renvoyé une réponse vide.")
+            return None
+        
+        print(f"🔄 Réponse OpenAI avant nettoyage : {message_content}")
+        cleaned_json = clean_json_response(message_content)
+        
+        if not cleaned_json:
+            print("❌ Le nettoyage a renvoyé une réponse vide.")
+            return None
+        
+        print(f"✅ Réponse OpenAI après nettoyage : {cleaned_json}")
+        return json.loads(cleaned_json)
+    except json.JSONDecodeError as e:
+        print(f"❌ Erreur de décodage JSON: {str(e)}")
+        print(f"🔍 Réponse brute OpenAI après nettoyage : {cleaned_json}")
+        return None
 
 def process_training_program(data):
     programme_data = generate_training_program(data)
@@ -70,39 +96,6 @@ def process_training_program(data):
             continue
         cycle_id = cycle_response["response"]["id"]
         update_parent_list("update_programme", programme_id, "list_cycles", cycle_id)
-        for semaine in cycle["list_semaines"]:
-            semaine_payload = {"cycle_id": cycle_id, "semaine_numero": semaine.get("numéro", 1)}
-            semaine_response = send_to_bubble("create_semaine", semaine_payload)
-            if not semaine_response or "response" not in semaine_response or "id" not in semaine_response["response"]:
-                continue
-            semaine_id = semaine_response["response"]["id"]
-            update_parent_list("update_cycle", cycle_id, "list_semaines", semaine_id)
-            for seance in semaine["list_séances"]:
-                seance_payload = {"semaine_id": semaine_id, "seance_nom": seance.get("nom", "Séance"), "seance_numero": seance.get("numéro", 1)}
-                seance_response = send_to_bubble("create_seance", seance_payload)
-                if not seance_response or "response" not in seance_response or "id" not in seance_response["response"]:
-                    continue
-                seance_id = seance_response["response"]["id"]
-                update_parent_list("update_semaine", semaine_id, "list_seances", seance_id)
-                for exercice in seance["list_exercices"]:
-                    exercice_payload = {"seance_id": seance_id, "exercice_nom": exercice.get("nom", "Exercice"), "exercice_temps_repos": exercice.get("temps_de_repos", 60)}
-                    exercice_response = send_to_bubble("create_exercice", exercice_payload)
-                    if not exercice_response or "response" not in exercice_response or "id" not in exercice_response["response"]:
-                        continue
-                    exercice_id = exercice_response["response"]["id"]
-                    update_parent_list("update_seance", seance_id, "list_exercices", exercice_id)
-                    for serie in exercice["list_séries"]:
-                        for i in range(serie.get("séries", 1)):
-                            serie_payload = {
-                                "exercice_id": exercice_id,
-                                "serie_charge": serie.get("charge", 0),
-                                "serie_repetitions": serie.get("répétitions", 0),
-                                "serie_index": i + 1
-                            }
-                            serie_response = send_to_bubble("create_serie", serie_payload)
-                            if serie_response and "response" in serie_response and "id" in serie_response["response"]:
-                                serie_id = serie_response["response"]["id"]
-                                update_parent_list("update_exercice", exercice_id, "list_series", serie_id)
     return {"message": "Programme enregistré avec succès !"}
 
 @app.route("/generate-program", methods=["POST"])
