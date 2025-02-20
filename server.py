@@ -42,11 +42,11 @@ def generate_training_program(data):
     Tu es un coach expert en planification d'entraînements.
     Génère un programme d'entraînement EN JSON STRICTEMENT VALIDE.
     Paramètres :
-    - Sport : {data["sport"]}
-    - Niveau : {data["level"]}
-    - Fréquence : {data["frequency"]} fois par semaine
-    - Objectif : {data["goal"]}
-    - Genre : {data["genre"]}
+    - Sport : {data.get("sport", "")}
+    - Niveau : {data.get("level", "")}
+    - Fréquence : {data.get("frequency", "")} fois par semaine
+    - Objectif : {data.get("goal", "")}
+    - Genre : {data.get("genre", "")}
     """
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7}
@@ -80,22 +80,37 @@ def generate_training_program(data):
 
 def process_training_program(data):
     programme_data = generate_training_program(data)
+    
     if not programme_data:
         return {"error": "Échec de la génération du programme"}
-    programme_payload = {"programme_nom": programme_data["programme"]["nom"], "programme_durée": programme_data["programme"]["durée"]}
+    
+    if "programme" not in programme_data:
+        print("❌ Erreur : La clé 'programme' est absente du JSON retourné.")
+        print(f"🔍 JSON reçu : {programme_data}")
+        return {"error": "Données du programme invalides"}
+    
+    programme = programme_data["programme"]
+    programme_nom = programme.get("nom", "Programme sans nom")
+    programme_duree = programme.get("durée", 0)
+    
+    programme_payload = {"programme_nom": programme_nom, "programme_durée": programme_duree}
     if "user_id" in data:
         programme_payload["user_id"] = data["user_id"]
+    
     programme_response = send_to_bubble("create_programme", programme_payload)
     if not programme_response or "response" not in programme_response or "id" not in programme_response["response"]:
         return {"error": "ID programme manquant"}
+    
     programme_id = programme_response["response"]["id"]
-    for cycle in programme_data["programme"]["list_cycles"]:
+    
+    for cycle in programme.get("list_cycles", []):
         cycle_payload = {"programme_id": programme_id, "cycle_nom": cycle.get("nom", "Cycle sans nom"), "cycle_durée": cycle.get("durée", 1)}
         cycle_response = send_to_bubble("create_cycle", cycle_payload)
         if not cycle_response or "response" not in cycle_response or "id" not in cycle_response["response"]:
             continue
         cycle_id = cycle_response["response"]["id"]
         update_parent_list("update_programme", programme_id, "list_cycles", cycle_id)
+    
     return {"message": "Programme enregistré avec succès !"}
 
 @app.route("/generate-program", methods=["POST"])
