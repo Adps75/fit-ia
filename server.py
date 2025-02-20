@@ -181,6 +181,8 @@ def process_training_program(data):
     1. Génère un programme via OpenAI
     2. L'envoie aux différentes API Workflows de Bubble
        (create_programme, create_cycle, create_semaine, create_seance, etc.)
+    3. Ajoute les références enfants → parents via update_* (ton Workflow)
+    4. Crée chaque série séparément
     """
     # Génération du JSON via OpenAI
     programme_data = generate_training_program(data)
@@ -207,6 +209,9 @@ def process_training_program(data):
     programme_id = programme_response["response"]["id"]
     print(f"✅ Programme enregistré avec ID : {programme_id}")
 
+    # Pour stocker les ID des cycles, afin de faire un update_programme
+    list_cycles_ids = []
+
     # 2️⃣ Parcours des cycles
     if "list_cycles" not in programme_data["programme"]:
         return {"message": "Programme enregistré (aucun cycle renseigné)."}
@@ -225,6 +230,10 @@ def process_training_program(data):
             continue
 
         cycle_id = cycle_response["response"]["id"]
+        list_cycles_ids.append(cycle_id)
+
+        # Pour stocker les ID des semaines, afin de faire un update_cycle
+        list_semaines_ids = []
 
         # 3️⃣ Parcours des semaines
         if "list_semaines" not in cycle:
@@ -243,6 +252,10 @@ def process_training_program(data):
                 continue
 
             semaine_id = semaine_response["response"]["id"]
+            list_semaines_ids.append(semaine_id)
+
+            # Pour stocker les ID des séances, afin de faire un update_semaine
+            list_seances_ids = []
 
             # 4️⃣ Parcours des séances
             if "list_séances" not in semaine:
@@ -265,10 +278,14 @@ def process_training_program(data):
                     continue
 
                 seance_id = seance_response["response"]["id"]
+                list_seances_ids.append(seance_id)
 
                 # 5️⃣ Parcours des Exercices (clé "list_exercices")
                 if "list_exercices" not in seance:
                     continue
+
+                # Pour stocker les ID des exercices, afin de faire un update_seance
+                list_exos_ids = []
 
                 for exercice in seance["list_exercices"]:
                     exercice_nom = exercice.get("nom", "Exercice")
@@ -288,6 +305,7 @@ def process_training_program(data):
                         continue
 
                     exercice_id = exercice_response["response"]["id"]
+                    list_exos_ids.append(exercice_id)
 
                     # 6️⃣ Parcours des Séries (clé "list_séries")
                     if "list_séries" not in exercice:
@@ -295,7 +313,7 @@ def process_training_program(data):
 
                     for serie in exercice["list_séries"]:
                         # On récupère les champs attendus
-                        serie_charge = serie.get("charge", 0)
+                        serie_charge = str(serie.get("charge", 0))  # Convert en str pour éviter \"INVALID_DATA\"
                         serie_reps = serie.get("répétitions", 0)
                         serie_nombre = serie.get("séries", 1)
 
@@ -306,6 +324,35 @@ def process_training_program(data):
                             "serie_repetitions": serie_reps,
                             "serie_nombre": serie_nombre
                         })
+
+                # Update la séance : on ajoute la liste des exos
+                # (ton workflow custom 'update_seance', param 'list_exercices' (list of text))
+                if list_exos_ids:
+                    send_to_bubble("update_seance", {
+                        "id": seance_id,           # L'ID de la séance
+                        "list_exercices": list_exos_ids
+                    })
+
+            # Update la semaine : on ajoute la liste des séances
+            if list_seances_ids:
+                send_to_bubble("update_semaine", {
+                    "id": semaine_id,
+                    "list_seances": list_seances_ids
+                })
+
+        # Update le cycle : on ajoute la liste des semaines
+        if list_semaines_ids:
+            send_to_bubble("update_cycle", {
+                "id": cycle_id,
+                "list_semaines": list_semaines_ids
+            })
+
+    # Update le programme : on ajoute la liste des cycles
+    if list_cycles_ids:
+        send_to_bubble("update_programme", {
+            "id": programme_id,
+            "list_cycles": list_cycles_ids
+        })
 
     return {"message": "Programme enregistré avec succès !"}
 
