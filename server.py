@@ -63,61 +63,136 @@ def generate_training_program(data):
     - list_series
     """
     prompt = f"""
-    Tu es un coach expert en planification d'entrainements.
-    Genere un programme d'entrainement EN JSON STRICTEMENT VALIDE,
-    sans texte hors du JSON et sans accents.
-    
-    Important:
-    - Utilise la cle 'duree' (sans accent) pour le programme et chaque cycle.
-    - Pour le programme: champ 'nom' (string) et 'duree' (int).
-    - Pour chaque cycle: champ 'nom' (string) et 'duree' (int).
-    - list_semaines[].numero
-    - list_semaines[].list_seances
-    - Pour chaque seance: cle 'numero', list_exercices
-    - Pour chaque exercice: cle 'nom', 'temps_de_repos', list_series
-    - Pour chaque serie: cle 'charge', 'repetitions', 'series'
-      (et si 'series'=3, nous creerons 3 series en base).
-    
-    Parametres:
-      Sport: {data['sport']}
-      Niveau: {data['level']}
-      Frequence: {data['frequency']} / semaine
-      Objectif: {data['goal']}
-      Genre: {data['genre']}
+    Tu es un coach expert en planification d'entraînements et suivi de progression.  
+    **Ta mission** : Générer un programme structuré avec évolution progressive.  
 
-    Sortie exemple:
+    ** Règles Générales** :
+    - **Génère un programme complet** : durée, cycles et semaines.  
+    - **Durée minimum programme** : 12 semaines
+    - **Durée minimum cycle** : 12 semaines
+    - **nombre minimum cycle** : 1
+    - **nombre maximum cycle** : 4
+    - **Seule la première semaine contient des séances, exercices et séries**.  
+    - **Les autres semaines sont vides et seront mises à jour plus tard.**  
+    - Chaque **semaine sera complétée progressivement** via un suivi de performance.  
+
+    ** Structure JSON (strictement valide)** :
+    - **Programme** → "nom" (string), "duree" (int), "list_cycles" (array).
+    - **Cycle** → "nom" (string), "duree" (int), "list_semaines" (array).
+    - **Semaine** → "numero" (int), "list_seances" (array).
+    - **Séance** → "numero" (int), "nom" (string), "list_exercices" (array).
+    - **Exercice** → "nom" (string), "temps_de_repos" (int), "list_series" (array).
+    - **Série** → "charge" (float), "repetitions" (int), "series" (int).
+
+    ** Progression Hebdomadaire** :
+    - **Chaque semaine, un call API analysera les performances** pour :  
+      - **Générer la nouvelle semaine avec progression**  
+      - **Ajuster les charges, répétitions et exercices**  
+
+    ** Noms des Séances** :
+    - Attribuer des noms de séance unique.
+
+    ** Temps de repos optimisé** :
+    - **Gros exercices (Squat, Deadlift, Bench Press, etc.)** : **min. 120 sec**  
+    - **Petits exercices (Isolation, abdos, curls, etc.)** : **min. 90 sec**  
+    - **Adapte selon le niveau** :
+      - **Débutant** : -10%  
+      - **Intermédiaire** : Standard  
+      - **Avancé** : +10%  
+
+    ** Paramètres Utilisateur** :
+      - Sport: {data["sport"]}
+      - Niveau: {data["level"]}
+      - Fréquence: {data["frequency"]} séances / semaine
+      - Objectif: {data["goal"]}
+      - Genre: {data["genre"]}
+
+    ** Exemples de sortie attendue** :
+
+    ```json
     {{
-      \"programme\": {{
-        \"nom\": \"Mon Programme\",
-        \"duree\": 12,
-        \"list_cycles\": [
+      "programme": {{
+        "nom": "Programme personnalisé",
+        "duree": 24,
+        "list_cycles": [
           {{
-            \"nom\": \"Cycle 1\",
-            \"duree\": 4,
-            \"list_semaines\": [
+            "nom": "Cycle 1",
+            "duree": 6,
+            "list_semaines": [
               {{
-                \"numero\": 1,
-                \"list_seances\": [
+                "numero": 1,
+                "list_seances": [
                   {{
-                    \"numero\": 1,
-                    \"list_exercices\": [
+                    "numero": 1,
+                    "nom": "Upper 1",
+                    "list_exercices": [
                       {{
-                        \"nom\": \"Exercice 1\",
-                        \"temps_de_repos\": 60,
-                        \"list_series\": [
-                          {{\"charge\": 40, \"repetitions\": 10, \"series\": 3}}
+                        "nom": "Développé Couché",
+                        "temps_de_repos": 120,
+                        "list_series": [
+                          {{"charge": 40, "repetitions": 10, "series": 3}}
+                        ]
+                      }},
+                      {{
+                        "nom": "Tractions",
+                        "temps_de_repos": 120,
+                        "list_series": [
+                          {{"charge": "Poids du corps", "repetitions": 8, "series": 3}}
+                        ]
+                      }}
+                    ]
+                  }},
+                  {{
+                    "numero": 2,
+                    "nom": "Lower 1",
+                    "list_exercices": [
+                      {{
+                        "nom": "Squat",
+                        "temps_de_repos": 120,
+                        "list_series": [
+                          {{"charge": 60, "repetitions": 8, "series": 3}}
+                        ]
+                      }},
+                      {{
+                        "nom": "Fentes",
+                        "temps_de_repos": 90,
+                        "list_series": [
+                          {{"charge": 15, "repetitions": 10, "series": 3}}
                         ]
                       }}
                     ]
                   }}
                 ]
+              }},
+              {{
+                "numero": 2,
+                "list_seances": []
+              }},
+              {{
+                "numero": 3,
+                "list_seances": []
+              }},
+              {{
+                "numero": 4,
+                "list_seances": []
+              }},
+              {{
+                "numero": 5,
+                "list_seances": []
+              }},
+              {{
+                "numero": 6,
+                "list_seances": []
               }}
             ]
           }}
         ]
       }}
     }}
-    """
+    ```
+
+    **Assure-toi que la sortie soit **100% JSON valide** et respecte ces contraintes.**
+"""
 
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
